@@ -1,0 +1,10 @@
+version: v2
+modules:
+  - name: buf.build/barpilot/operator-plugin-framework
+    path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

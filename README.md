@@ -79,7 +79,8 @@ graph TD
    - ServiceAccount token-based authentication
    - Connects through kube-rbac-proxy for secure communication
    - Stream adapter for bidirectional communication
-   - Support for static tokens (testing) and custom token providers
+   - **Token Provider Architecture**: Flexible authentication through TokenProvider interface
+   - Support for ServiceAccount tokens, static tokens, and custom providers
 
 4. **Test Utilities** (`test/`): E2E testing infrastructure
    - Stream manager testing
@@ -116,21 +117,24 @@ message DoSomethingResponse {
 import "github.com/guilhem/operator-plugin-framework/server"
 
 // In your controller setup (cmd/main.go or controller init):
-func setupPluginServer() (*server.Server, error) {
+func setupPluginServer(mgr ctrl.Manager) (*server.Server, error) {
     // Server listens for pre-authenticated connections from kube-rbac-proxy
     pluginServer := server.New("unix:///tmp/plugins.sock")
     
-    err := pluginServer.Start(context.Background())
-    if err != nil {
+    // Add server to manager (implements controller-runtime Runnable interface)
+    // This will start the server when the manager starts
+    if err := mgr.Add(pluginServer); err != nil {
         return nil, err
     }
     
     registry := pluginServer.GetRegistry()
-    log.Info("Plugin server started", "plugins", len(registry.List()))
+    log.Info("Plugin server configured", "address", "unix:///tmp/plugins.sock")
     
     return pluginServer, nil
 }
 ```
+
+**Note:** The server implements the `controller-runtime` `Runnable` interface, so it should be added to your manager rather than started manually. The manager will handle starting and stopping the server lifecycle.
 
 ### Step 3: Query Plugins in Your Reconciliation Logic
 
@@ -349,6 +353,33 @@ Operator gRPC Server (receives pre-authenticated gRPC requests via Unix socket)
 - Validated requests are forwarded to the operator's **Unix socket**
 - The operator never sees unauthenticated requests
 
+### Token Authentication Architecture
+
+The framework uses a flexible **TokenProvider** pattern for authentication:
+
+```go
+// TokenProvider interface for obtaining authentication tokens
+type TokenProvider interface {
+    GetToken() (string, error)
+}
+
+// TokenCredential implements gRPC credentials using a TokenProvider
+type TokenCredential struct {
+    Provider TokenProvider
+}
+```
+
+**Built-in Providers:**
+- `ServiceAccountTokenProvider`: Reads tokens from Kubernetes ServiceAccount mounts
+- `StaticTokenProvider`: Uses fixed tokens (for testing)
+
+**Client Options:**
+- `WithServiceAccountToken()`: Uses default ServiceAccount token path
+- `WithStaticToken(token)`: Uses fixed token for testing
+- `WithTokenProvider(provider)`: Uses custom TokenProvider implementation
+
+**Validation:** Token providers are validated at connection time by attempting to retrieve a token before establishing the gRPC connection. This ensures authentication issues are caught early.
+
 ### Configuration
 
 kube-rbac-proxy requires:
@@ -384,27 +415,45 @@ Plugin → HTTPS (gRPC/TLS) → kube-rbac-proxy (validates token + RBAC) → Uni
 ```go
 import "github.com/guilhem/operator-plugin-framework/server"
 
-// For Operators
-s := server.New("unix:///tmp/plugins.sock")
-err := s.Start(context.Background())
-if err != nil {
-    log.Fatal(err)
+// For Operators - integrate with controller-runtime manager
+func setupServer(mgr ctrl.Manager) error {
+    s := server.New("unix:///tmp/plugins.sock")
+    
+    // Add to manager (handles start/stop lifecycle)
+    return mgr.Add(s)
 }
 
-// Get registry to query connected plugins
-registry := s.GetRegistry()
-plugins := registry.List()
-log.Info("Available plugins", "count", len(plugins))
+// Or start manually (not recommended for production)
+func startServerManually() error {
+    s := server.New("unix:///tmp/plugins.sock")
+    return s.Start(context.Background()) // This blocks until context cancelled
+}
 ```
 
 ```go
 import "github.com/guilhem/operator-plugin-framework/client"
 
 // For Plugins - connect through kube-rbac-proxy
+// streamCreator creates the bidirectional gRPC stream
+// Option 1: Using generated gRPC client (recommended for protobuf services)
+streamCreator := func(conn *grpc.ClientConn) (stream.StreamInterface, error) {
+    client := pb.NewMyServiceClient(conn)
+    return client.MyBidirectionalStream(ctx)
+}
+
+// Option 2: Using stream adapter (for custom stream implementations)
+streamCreator := func(conn *grpc.ClientConn) (stream.StreamInterface, error) {
+    return stream.NewBidiStreamAdapter(conn, wrapMessage, unwrapMessage)
+}
+
 conn, err := client.New(
     ctx,
     "my-plugin",
     "https://operator-kube-rbac-proxy:8443",
+    "v1.0.0",
+    &pb.MyService_ServiceDesc,
+    &myServiceImpl{},
+    streamCreator,
     client.WithServiceAccountToken(),
 )
 if err != nil {
@@ -453,14 +502,33 @@ func (m *Manager) Unregister(name string)
 ### Client
 
 ```go
-// New creates a gRPC connection to the operator
-func New(ctx context.Context, name string, target string, opts ...ClientOption) (*grpc.ClientConn, error)
+// New creates a gRPC connection to the operator with authentication
+func New(ctx context.Context, name string, target string, pluginVersion string, serviceDesc grpc.ServiceDesc, impl any, streamCreator StreamCreatorFunc, opts ...ClientOption) (*Client, error)
 
-// WithServiceAccountToken uses Kubernetes ServiceAccount authentication
-func WithServiceAccountToken() ClientOption
+// Authentication Options:
+// WithServiceAccountToken() - Uses Kubernetes ServiceAccount tokens (default path)
+// WithServiceAccountTokenPath(path) - Uses custom ServiceAccount token path  
+// WithStaticToken(token) - Uses fixed token (for testing)
+// WithTokenProvider(provider) - Uses custom TokenProvider implementation
 
-// WithStaticToken uses a static token (testing)
-func WithStaticToken(token string) ClientOption
+// Example: Connect with ServiceAccount authentication
+// streamCreator creates the bidirectional gRPC stream
+// Using generated gRPC client (recommended)
+streamCreator := func(conn *grpc.ClientConn) (stream.StreamInterface, error) {
+    client := pb.NewMyServiceClient(conn)
+    return client.MyBidirectionalStream(ctx)
+}
+
+conn, err := client.New(
+    ctx,
+    "my-plugin", 
+    "https://operator-kube-rbac-proxy:8443",
+    "v1.0.0",
+    &pb.MyService_ServiceDesc,
+    &myServiceImpl{},
+    streamCreator,
+    client.WithServiceAccountToken(),
+)
 ```
 
 ## Integration with Token Renewer

@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package pluginframework.v1;
+
+option go_package = "github.com/guilhem/operator-plugin-framework/pluginframework/v1;pluginframeworkv1";
+
+// PluginStreamMessage is the base message for bidirectional plugin stream communication.
+// It uses oneof to support different message types in the plugin communication protocol.
+message PluginStreamMessage {
+  oneof payload {
+    PluginRegister register = 1;
+    PluginRPCCall rpc_call = 2;
+    PluginRPCResponse rpc_response = 3;
+    PluginError error = 4;
+  }
+}
+
+// PluginRegister is sent by the plugin when it connects to register itself.
+message PluginRegister {
+  string name = 1;
+  string version = 2;
+}
+
+// PluginRPCCall represents an RPC method call to be forwarded to the plugin.
+message PluginRPCCall {
+  string request_id = 1;      // Unique ID to correlate with response
+  string method = 2;           // Method name (e.g., "RenewToken", "GetTokenValidity")
+  bytes payload = 3;           // Encoded request message (protocol-specific)
+}
+
+// PluginRPCResponse is the response from the plugin to an RPC call.
+message PluginRPCResponse {
+  string request_id = 1;      // Correlates with the original RPC call
+  bytes payload = 2;           // Encoded response message (protocol-specific)
+}
+
+// PluginError represents an error in plugin communication.
+message PluginError {
+  string message = 1;
+  string code = 2;
+}
