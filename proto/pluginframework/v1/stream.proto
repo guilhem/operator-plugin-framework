@@ -39,3 +39,9 @@ message PluginError {
   string message = 1;
   string code = 2;
 }
+
+// PluginFrameworkService defines the service for plugin stream communication.
+service PluginFrameworkService {
+  // PluginStream establishes a bidirectional stream for plugin registration and RPC forwarding.
+  rpc PluginStream(stream PluginStreamMessage) returns (stream PluginStreamMessage);
+}

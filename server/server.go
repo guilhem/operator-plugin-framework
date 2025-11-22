@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	pluginframeworkv1 "github.com/guilhem/operator-plugin-framework/pluginframework/v1"
 	"github.com/guilhem/operator-plugin-framework/registry"
 )
 
@@ -95,6 +96,10 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Create gRPC server
 	s.grpcServer = grpc.NewServer()
+
+	// Register the plugin framework service
+	serviceServer := NewPluginFrameworkServiceServer(s)
+	pluginframeworkv1.RegisterPluginFrameworkServiceServer(s.grpcServer, serviceServer)
 
 	logger.Info("Starting plugin server", "network", network, "addr", addr)
 

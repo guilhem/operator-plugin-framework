@@ -2,17 +2,13 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
 
-	pluginframeworkv1 "github.com/guilhem/operator-plugin-framework/pluginframework/v1"
-	"github.com/guilhem/operator-plugin-framework/stream"
 	"github.com/guilhem/operator-plugin-framework/token"
 )
 
@@ -26,18 +22,18 @@ func TestNew(t *testing.T) {
 		{
 			name:    "unix socket - connection setup succeeds",
 			addr:    "unix:///tmp/test.sock",
-			wantErr: false, // New succeeds even if connection fails later
+			wantErr: true, // Now expects connection error since we try to connect
 		},
 		{
 			name:    "tcp address - connection setup succeeds",
-			addr:    "tcp://localhost:50051",
-			wantErr: false,
+			addr:    "tcp://127.0.0.1:0", // Use port 0 to avoid conflicts
+			wantErr: true,                // Expects connection error since no server is running
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 			defer cancel()
 
 			// Mock service descriptor and implementation for testing
@@ -49,7 +45,7 @@ func TestNew(t *testing.T) {
 
 			var mockImpl interface{} = &mockServiceImpl{}
 
-			_, err := New(ctx, "test-plugin", tt.addr, "v1.0.0", mockServiceDesc, mockImpl, mockStreamCreator, tt.opts...)
+			_, err := New(ctx, "test-plugin", tt.addr, "v1.0.0", mockServiceDesc, mockImpl, tt.opts...)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -60,33 +56,6 @@ func TestNew(t *testing.T) {
 
 // mockServiceImpl is a mock implementation for testing
 type mockServiceImpl struct{}
-
-// mockStream is a simple mock implementation of StreamInterface for testing
-type mockStream struct {
-	ctx context.Context
-}
-
-func (m *mockStream) Send(msg *pluginframeworkv1.PluginStreamMessage) error {
-	// Accept registration messages
-	if register := msg.GetRegister(); register != nil {
-		return nil
-	}
-	return fmt.Errorf("unexpected message type")
-}
-
-func (m *mockStream) Recv() (*pluginframeworkv1.PluginStreamMessage, error) {
-	// For testing, just return an error to indicate end of stream
-	return nil, fmt.Errorf("mock stream closed")
-}
-
-func (m *mockStream) Context() context.Context {
-	return m.ctx
-}
-
-// mockStreamCreator is a mock stream creator for testing
-func mockStreamCreator(conn *grpc.ClientConn) (stream.StreamInterface, error) {
-	return &mockStream{ctx: context.Background()}, nil
-}
 
 func TestServiceAccountTokenProvider(t *testing.T) {
 	// Create temporary token file
@@ -244,61 +213,11 @@ func TestNew_WithInvalidToken(t *testing.T) {
 	}
 	var mockImpl interface{} = &mockServiceImpl{}
 
-	_, err := New(ctx, "test-plugin", "unix:///tmp/test.sock", "v1.0.0", mockServiceDesc, mockImpl, mockStreamCreator,
+	_, err := New(ctx, "test-plugin", "unix:///tmp/test.sock", "v1.0.0", mockServiceDesc, mockImpl,
 		WithTokenProvider(provider),
 	)
 
 	if err == nil {
 		t.Error("New() expected error when token provider fails, got nil")
-	}
-}
-
-// failingMockStream is a mock stream that fails on Send for registration messages
-type failingMockStream struct {
-	ctx context.Context
-}
-
-func (m *failingMockStream) Send(msg *pluginframeworkv1.PluginStreamMessage) error {
-	// Fail registration messages
-	if register := msg.GetRegister(); register != nil {
-		return fmt.Errorf("mock registration failure")
-	}
-	return nil
-}
-
-func (m *failingMockStream) Recv() (*pluginframeworkv1.PluginStreamMessage, error) {
-	return nil, fmt.Errorf("mock stream closed")
-}
-
-func (m *failingMockStream) Context() context.Context {
-	return m.ctx
-}
-
-// failingStreamCreator creates a stream that fails during registration
-func failingStreamCreator(conn *grpc.ClientConn) (stream.StreamInterface, error) {
-	return &failingMockStream{ctx: context.Background()}, nil
-}
-
-func TestNew_PluginStreamClientCreationFails(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-
-	// Mock service descriptor and implementation
-	mockServiceDesc := grpc.ServiceDesc{
-		ServiceName: "test.TestService",
-		Methods:     []grpc.MethodDesc{},
-		Streams:     []grpc.StreamDesc{},
-	}
-	var mockImpl interface{} = &mockServiceImpl{}
-
-	_, err := New(ctx, "test-plugin", "unix:///tmp/test.sock", "v1.0.0", mockServiceDesc, mockImpl, failingStreamCreator)
-
-	if err == nil {
-		t.Error("New() expected error when PluginStreamClient creation fails, got nil")
-	}
-
-	// Verify the error message contains the expected failure reason
-	if !strings.Contains(err.Error(), "failed to create plugin stream client") {
-		t.Errorf("New() error = %q, expected to contain 'failed to create plugin stream client'", err.Error())
 	}
 }

@@ -51,6 +51,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	pluginframeworkv1 "github.com/guilhem/operator-plugin-framework/pluginframework/v1"
 	"github.com/guilhem/operator-plugin-framework/stream"
 	"github.com/guilhem/operator-plugin-framework/token"
 )
@@ -96,16 +97,15 @@ func WithStaticToken(tokenS string) ClientOption {
 	}
 }
 
-type StreamCreatorFunc func(conn *grpc.ClientConn) (stream.StreamInterface, error)
-
 type Client struct {
 	stream.PluginStreamClient
 
 	conn *grpc.ClientConn
 }
 
-// New creates a new plugin stream client with authentication and stream setup.
-// This is a convenience function that handles the complete plugin connection process.
+// New creates a new plugin stream client with authentication and automatic stream setup.
+// This is a convenience function that handles the complete plugin connection process,
+// including automatic connection to the PluginFrameworkService for stream communication.
 //
 // The function supports flexible authentication through TokenProvider options:
 // - WithServiceAccountToken(): Uses Kubernetes ServiceAccount tokens
@@ -118,6 +118,9 @@ type Client struct {
 // 3. Adds Bearer authentication headers to all gRPC calls
 // 4. Handles token refresh through the provider interface
 //
+// The client automatically connects to the PluginFrameworkService.PluginStream method
+// for bidirectional communication, eliminating the need for manual stream creation.
+//
 // Parameters:
 //   - ctx: context for the connection (used for cancellation)
 //   - name: plugin name (used for registration)
@@ -125,7 +128,6 @@ type Client struct {
 //   - pluginVersion: plugin version string (sent during registration)
 //   - serviceDesc: gRPC service descriptor for RPC routing
 //   - impl: service implementation (handles incoming RPC calls)
-//   - streamCreator: function that creates the bidirectional stream
 //   - opts: client options for authentication and configuration
 //
 // Returns a PluginStreamClient ready to handle RPC calls, or an error if connection fails.
@@ -136,7 +138,6 @@ func New(
 	pluginVersion string,
 	serviceDesc grpc.ServiceDesc,
 	impl any,
-	streamCreator StreamCreatorFunc,
 	opts ...ClientOption,
 ) (*Client, error) {
 	// Create connection config
@@ -176,8 +177,9 @@ func New(
 		}
 	}()
 
-	// Create the stream
-	grpcStream, err := streamCreator(grpcConn)
+	// Automatically create stream using PluginFrameworkService
+	frameworkClient := pluginframeworkv1.NewPluginFrameworkServiceClient(grpcConn)
+	grpcStream, err := frameworkClient.PluginStream(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create plugin stream: %w", err)
 	}

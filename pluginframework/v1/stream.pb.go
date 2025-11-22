@@ -382,7 +382,9 @@ const file_pluginframework_v1_stream_proto_rawDesc = "" +
 	"\apayload\x18\x02 \x01(\fR\apayload\";\n" +
 	"\vPluginError\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x12\n" +
-	"\x04code\x18\x02 \x01(\tR\x04codeB\xe1\x01\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code2~\n" +
+	"\x16PluginFrameworkService\x12d\n" +
+	"\fPluginStream\x12'.pluginframework.v1.PluginStreamMessage\x1a'.pluginframework.v1.PluginStreamMessage(\x010\x01B\xe1\x01\n" +
 	"\x16com.pluginframework.v1B\vStreamProtoP\x01ZQgithub.com/guilhem/operator-plugin-framework/pluginframework/v1;pluginframeworkv1\xa2\x02\x03PXX\xaa\x02\x12Pluginframework.V1\xca\x02\x12Pluginframework\\V1\xe2\x02\x1ePluginframework\\V1\\GPBMetadata\xea\x02\x13Pluginframework::V1b\x06proto3"
 
 var (
@@ -410,8 +412,10 @@ var file_pluginframework_v1_stream_proto_depIdxs = []int32{
 	2, // 1: pluginframework.v1.PluginStreamMessage.rpc_call:type_name -> pluginframework.v1.PluginRPCCall
 	3, // 2: pluginframework.v1.PluginStreamMessage.rpc_response:type_name -> pluginframework.v1.PluginRPCResponse
 	4, // 3: pluginframework.v1.PluginStreamMessage.error:type_name -> pluginframework.v1.PluginError
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
+	0, // 4: pluginframework.v1.PluginFrameworkService.PluginStream:input_type -> pluginframework.v1.PluginStreamMessage
+	0, // 5: pluginframework.v1.PluginFrameworkService.PluginStream:output_type -> pluginframework.v1.PluginStreamMessage
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name
 	4, // [4:4] is the sub-list for extension extendee
 	0, // [0:4] is the sub-list for field type_name
@@ -436,7 +440,7 @@ func file_pluginframework_v1_stream_proto_init() {
 			NumEnums:      0,
 			NumMessages:   5,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_pluginframework_v1_stream_proto_goTypes,
 		DependencyIndexes: file_pluginframework_v1_stream_proto_depIdxs,
